@@ -2,39 +2,23 @@ import streamlit as st
 import requests
 import time
 import pandas as pd
+import csv
 from streamlit_lottie import st_lottie
+
 
 # Page configuration
 st.set_page_config(
-    page_title="Houses of Ice and Fire",
+    page_title="World of Ice and Fire",
     page_icon="🔥❄️",
     layout="wide"
 )
 
-# Custom CSS styling
+# Custom styling
 st.markdown("""
 <style>
     body {
         background: linear-gradient(135deg, #1e1e2f, #3a3a5f, #5f1e1e);
         color: #f0f0f0;
-    }
-    .stButton button {
-        background: linear-gradient(90deg, #d72638, #3f88c5);
-        color: #fff;
-        border-radius: 12px;
-        font-weight: 600;
-        padding: 10px 20px;
-        transition: all 0.3s ease-in-out;
-        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.3);
-    }
-    .stButton button:hover {
-        background: linear-gradient(90deg, #3f88c5, #d72638);
-        transform: scale(1.05);
-    }
-    .stDataFrame, .stMetric {
-        border-radius: 12px;
-        box-shadow: 0px 6px 14px rgba(0, 0, 0, 0.4);
-        background: rgba(255, 255, 255, 0.08);
     }
     .title-text {
         font-size: 48px;
@@ -43,10 +27,24 @@ st.markdown("""
         text-shadow: 3px 3px 12px rgba(215, 38, 56, 0.7);
         text-align: center;
     }
+    .stButton > button {
+        background: linear-gradient(90deg, #d72638, #3f88c5);
+        color: white;
+        padding: 10px 24px;
+        border-radius: 12px;
+        border: none;
+        font-weight: bold;
+        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.4);
+        transition: 0.3s ease-in-out;
+    }
+    .stButton > button:hover {
+        background: linear-gradient(90deg, #3f88c5, #d72638);
+        transform: scale(1.05);
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# Load Lottie animation
+
 @st.cache_data()
 def load_lottie_url(url):
     r = requests.get(url)
@@ -54,91 +52,143 @@ def load_lottie_url(url):
         return None
     return r.json()
 
-# Fetch houses with caching
+
 @st.cache_data(ttl=3600)
 def get_all_houses():
     url = "https://anapioficeandfire.com/api/houses"
     houses = []
-    page, page_size = 1, 50
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-
+    page = 1
     while True:
-        params = {'page': page, 'pageSize': page_size}
+        params = {'page': page, 'pageSize': 50}
         response = requests.get(url, params=params)
-        if response.status_code != 200:
-            st.error("Error fetching data from API")
-            break
         data = response.json()
         if not data:
             break
-        for house in data:
-            houses.append({
-                "House Name": house.get('name', 'Unknown'),
-                "Region": house.get('region', 'Unknown')
-            })
-        progress_bar.progress(min(page * page_size / 500, 1.0))
-        status_text.text(f"Fetching data... {len(houses)} houses loaded")
-        time.sleep(0.3)
+        houses.extend([{"House Name": h.get('name', 'Unknown'), "Region": h.get('region', 'Unknown')} for h in data])
         page += 1
-
     return pd.DataFrame(houses).sort_values(by="House Name")
 
-# Main app
+
+@st.cache_data(ttl=3600)
+def get_all_books():
+    url = "https://anapioficeandfire.com/api/books"
+    books = []
+    page = 1
+    while True:
+        params = {'page': page, 'pageSize': 50}
+        response = requests.get(url, params=params)
+        data = response.json()
+        if not data:
+            break
+        books.extend(data)
+        page += 1
+
+    books_dict = {}
+    for book in books:
+        books_dict[book['name']] = [
+            book.get('numberOfPages', 'Unknown'),
+            book.get('released', 'Unknown').split('T')[0],
+            book.get('isbn', 'Unknown'),
+            book.get('publisher', 'Unknown')
+        ]
+    return books_dict
+
+
+@st.cache_data()
+def create_books_csv(books_dict):
+    csv_filename = "books_of_ice_and_fire.csv"
+    with open(csv_filename, mode='w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["Book Name", "Pages", "Release Date", "ISBN", "Publisher"])
+        for name, details in books_dict.items():
+            writer.writerow([name] + details)
+    return csv_filename
+
+
+@st.cache_data(ttl=3600)
+def get_all_characters():
+    url = "https://anapioficeandfire.com/api/characters"
+    characters = []
+    page = 1
+    while True:
+        params = {'page': page, 'pageSize': 50}
+        response = requests.get(url, params=params)
+        data = response.json()
+        if not data:
+            break
+        for char in data:
+            seasons = len(char.get('tvSeries', []))
+            characters.append({
+                "Name": char.get('name', 'Unknown'),
+                "Seasons": seasons
+            })
+        page += 1
+    return pd.DataFrame(characters).sort_values(by="Seasons", ascending=False)
+
+
 def main():
-    st.markdown("<h1 class='title-text'>❄️ Houses of Ice and Fire 🔥</h1>", unsafe_allow_html=True)
+    st.sidebar.title("⚔️ Navigate")
+    selected_section = st.sidebar.radio(
+        "Choose Section", ["Houses", "Books", "Characters"]
+    )
 
-    # Load and display Lottie animation
-    lottie_url = "https://assets6.lottiefiles.com/packages/lf20_w51pcehl.json"  # Ice & Fire swirl effect
+    st.markdown("<h1 class='title-text'>🌌 World of Ice and Fire 🌌</h1>", unsafe_allow_html=True)
+
+    lottie_url = "https://assets6.lottiefiles.com/packages/lf20_w51pcehl.json"
     lottie_json = load_lottie_url(lottie_url)
-
-    st.markdown("""
-    <div style="text-align: center; font-size: 20px; margin-top: -20px; color: #FFFFFF;">
-        Explore the noble houses of <em>A Song of Ice and Fire</em> with an icy and fiery theme!
-    </div>
-    """, unsafe_allow_html=True)
-
     if lottie_json:
         st_lottie(lottie_json, height=300, key="ice_fire_animation")
     else:
-        st.error("⚠️ Failed to load animation. Please check the animation link or your internet connection.")
+        st.error("⚠️ Failed to load animation.")
 
-    # Session state for houses
-    if "houses" not in st.session_state:
-        st.session_state.houses = pd.DataFrame()
+    st.markdown("---")
 
-    # Button to load houses
-    if st.button("🔥 Summon the Houses ❄️", use_container_width=True):
-        with st.spinner("Summoning Houses..."):
-            st.session_state.houses = get_all_houses()
-        st.success(f"Loaded {len(st.session_state.houses)} houses!")
+    if selected_section == "Houses":
+        st.header("🏰 Noble Houses")
+        if "houses" not in st.session_state:
+            st.session_state.houses = pd.DataFrame()
 
-    # Display search and filters if data is loaded
-    if not st.session_state.houses.empty:
-        search_col, region_col = st.columns(2)
-        with search_col:
-            search_term = st.text_input("🔍 Search houses by name:")
-        with region_col:
-            regions = sorted(st.session_state.houses["Region"].unique())
-            selected_region = st.selectbox("🌍 Filter by region:", ["All"] + regions)
+        with st.container():
+            summon_button = st.button("🔥 Summon the Houses ❄️", use_container_width=True)
+            if summon_button:
+                with st.spinner("Summoning Houses..."):
+                    st.session_state.houses = get_all_houses()
+                st.success(f"Loaded {len(st.session_state.houses)} houses!")
 
-        # Filter data
-        filtered_houses = st.session_state.houses.copy()
-        if search_term:
-            filtered_houses = filtered_houses[filtered_houses["House Name"].str.contains(search_term, case=False)]
-        if selected_region != "All":
-            filtered_houses = filtered_houses[filtered_houses["Region"] == selected_region]
+        if not st.session_state.houses.empty:
+            search_term = st.text_input("🔍 Search Houses")
+            region_filter = st.selectbox(
+                "🌍 Filter by Region",
+                ["All"] + list(st.session_state.houses["Region"].unique())
+            )
+            filtered = st.session_state.houses.copy()
+            if search_term:
+                filtered = filtered[filtered["House Name"].str.contains(search_term, case=False)]
+            if region_filter != "All":
+                filtered = filtered[filtered["Region"] == region_filter]
 
-        st.subheader(f"Displaying {len(filtered_houses)} houses")
+            st.dataframe(filtered, use_container_width=True)
+            text_content = "\n".join(f"{row['House Name']} - {row['Region']}" for _, row in filtered.iterrows())
+            st.download_button("⬇️ Download Houses", text_content, "houses.txt", "text/plain")
 
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.dataframe(filtered_houses, height=600, use_container_width=True)
-        with col2:
-            text_content = "\n".join(f"{row['House Name']} - {row['Region']}" for _, row in filtered_houses.iterrows())
-            st.download_button("⬇️ Download List", text_content, "houses.txt", "text/plain")
-            st.metric("🏰 Total Houses", len(st.session_state.houses))
-            st.metric("📜 Showing Houses", len(filtered_houses))
+    elif selected_section == "Books":
+        st.header("📚 Books of Ice and Fire")
+        books_dict = get_all_books()
+        df_books = pd.DataFrame([
+            {"Book Name": name, "Pages": d[0], "Release Date": d[1], "ISBN": d[2], "Publisher": d[3]}
+            for name, d in books_dict.items()
+        ])
+        st.dataframe(df_books, use_container_width=True)
+        csv_file = create_books_csv(books_dict)
+        with open(csv_file, "rb") as f:
+            st.download_button("⬇️ Download Books CSV", f, csv_file, "text/csv")
+
+    elif selected_section == "Characters":
+        st.header("🧙‍♂️ Characters of Ice and Fire")
+        df_characters = get_all_characters()
+        st.dataframe(df_characters, use_container_width=True)
+        st.metric("Total Characters", len(df_characters))
+
 
 if __name__ == "__main__":
     main()
