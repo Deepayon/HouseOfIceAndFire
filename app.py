@@ -3,6 +3,7 @@ import requests
 import time
 import pandas as pd
 import csv
+from io import BytesIO
 from streamlit_lottie import st_lottie
 
 
@@ -39,6 +40,7 @@ st.markdown("""
     }
     .stButton > button:hover {
         background: linear-gradient(90deg, #3f88c5, #d72638);
+        color: yellow;
         transform: scale(1.05);
     }
 </style>
@@ -126,13 +128,21 @@ def get_all_characters():
     return pd.DataFrame(characters).sort_values(by="Seasons", ascending=False)
 
 
+def export_characters_to_excel(df_characters):
+    excel_buffer = BytesIO()
+    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+        df_characters.to_excel(writer, index=False, sheet_name='Characters')
+    excel_buffer.seek(0)
+    return excel_buffer
+
+
 def main():
-    st.sidebar.title("⚔️ Navigate")
+    st.sidebar.title("Navigate")
     selected_section = st.sidebar.radio(
         "Choose Section", ["Houses", "Books", "Characters"]
     )
 
-    st.markdown("<h1 class='title-text'>🌌 World of Ice and Fire 🌌</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 class='title-text'>❄️ World of Ice and Fire 🔥</h1>", unsafe_allow_html=True)
 
     lottie_url = "https://assets6.lottiefiles.com/packages/lf20_w51pcehl.json"
     lottie_json = load_lottie_url(lottie_url)
@@ -144,18 +154,19 @@ def main():
     st.markdown("---")
 
     if selected_section == "Houses":
-        st.header("🏰 Noble Houses")
+        st.header("🏰 List of All Houses")
         if "houses" not in st.session_state:
             st.session_state.houses = pd.DataFrame()
 
         with st.container():
-            summon_button = st.button("🔥 Summon the Houses ❄️", use_container_width=True)
+            summon_button = st.button(" Search Houses 🔍", use_container_width=True)
             if summon_button:
                 with st.spinner("Summoning Houses..."):
                     st.session_state.houses = get_all_houses()
                 st.success(f"Loaded {len(st.session_state.houses)} houses!")
 
         if not st.session_state.houses.empty:
+            st.metric("Total Houses", len(st.session_state.houses))
             search_term = st.text_input("🔍 Search Houses")
             region_filter = st.selectbox(
                 "🌍 Filter by Region",
@@ -169,7 +180,7 @@ def main():
 
             st.dataframe(filtered, use_container_width=True)
             text_content = "\n".join(f"{row['House Name']} - {row['Region']}" for _, row in filtered.iterrows())
-            st.download_button("⬇️ Download Houses", text_content, "houses.txt", "text/plain")
+            st.download_button("📥 Download Houses", text_content, "houses.txt", "text/plain")
 
     elif selected_section == "Books":
         st.header("📚 Books of Ice and Fire")
@@ -178,16 +189,25 @@ def main():
             {"Book Name": name, "Pages": d[0], "Release Date": d[1], "ISBN": d[2], "Publisher": d[3]}
             for name, d in books_dict.items()
         ])
+        st.metric("Total Books", len(df_books))
         st.dataframe(df_books, use_container_width=True)
         csv_file = create_books_csv(books_dict)
         with open(csv_file, "rb") as f:
-            st.download_button("⬇️ Download Books CSV", f, csv_file, "text/csv")
+            st.download_button("📥 Download Books CSV", f, csv_file, "text/csv")
 
     elif selected_section == "Characters":
         st.header("🧙‍♂️ Characters of Ice and Fire")
         df_characters = get_all_characters()
-        st.dataframe(df_characters, use_container_width=True)
         st.metric("Total Characters", len(df_characters))
+        st.dataframe(df_characters, use_container_width=True)
+
+        excel_data = export_characters_to_excel(df_characters)
+        st.download_button(
+            label="📥 Download Characters Excel",
+            data=excel_data,
+            file_name="characters_of_ice_and_fire.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
 
 if __name__ == "__main__":
